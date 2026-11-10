@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# กัน commit ที่มี attribution ของ Claude
+# ติดตั้ง: cp tools/hooks/commit-msg .git/hooks/commit-msg && chmod +x .git/hooks/commit-msg
+if grep -qiE '^(Co-Authored-By: Claude|Claude-Session:)' "$1"; then
+  echo "commit นี้มี attribution ของ Claude ให้ลบบรรทัดนั้นออกก่อน commit"
+  exit 1
+fi

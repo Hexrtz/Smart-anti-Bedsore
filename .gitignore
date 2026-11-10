@@ -1,0 +1,21 @@
+# secrets (ห้าม commit)
+.env
+secrets.h
+**/include/secrets.h
+*service-account*.json
+firebase-adminsdk*.json
+sa.json
+# build / runtime
+.pio/
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+*.db
+*.sqlite
+*.log
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

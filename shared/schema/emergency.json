@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "smart-bed/emergency.json",
+  "title": "สายดึงฉุกเฉิน (ส่งซ้ำจนกว่าจะได้ ACK)",
+  "type": "object",
+  "required": [
+    "v",
+    "node",
+    "seq",
+    "type",
+    "t",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^node[0-9]+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "type": {
+      "const": "emergency"
+    },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "millis() ของ Node"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "pull_cord"
+          ]
+        }
+      }
+    }
+  }
+}

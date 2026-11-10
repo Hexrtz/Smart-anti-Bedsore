@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "smart-bed/hb.json",
+  "title": "Heartbeat ทุก 10 วินาที + ตัวนับสำหรับ packet delivery rate",
+  "type": "object",
+  "required": [
+    "v",
+    "node",
+    "seq",
+    "type",
+    "t",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^node[0-9]+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "type": {
+      "const": "hb"
+    },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "millis() ของ Node"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "rssi",
+        "fw",
+        "faults",
+        "sent",
+        "acked",
+        "dropped"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rssi": {
+          "type": "integer",
+          "maximum": 0
+        },
+        "fw": {
+          "type": "string"
+        },
+        "faults": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "mlx90614",
+              "mic",
+              "fsr_suspect"
+            ]
+          }
+        },
+        "sent": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "acked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

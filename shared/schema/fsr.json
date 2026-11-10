@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "smart-bed/fsr.json",
+  "title": "แรงกด FSR 6 จุด เรียงตาม fsr_order ทุก 1 วินาที",
+  "type": "object",
+  "required": [
+    "v",
+    "node",
+    "seq",
+    "type",
+    "t",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^node[0-9]+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "type": {
+      "const": "fsr"
+    },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "millis() ของ Node"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "raw",
+        "dwell_s"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4095
+          },
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "dwell_s": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 6,
+          "maxItems": 6
+        }
+      }
+    }
+  }
+}

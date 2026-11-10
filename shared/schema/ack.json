@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "smart-bed/ack.json",
+  "title": "ACK จาก Gateway กลับไปที่ Node",
+  "type": "object",
+  "required": [
+    "type",
+    "node",
+    "seq"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "type": {
+      "const": "ack"
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^node[0-9]+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

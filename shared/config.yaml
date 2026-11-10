@@ -1,0 +1,82 @@
+# ค่าคงที่กลางของทั้งระบบ (เจ้าของ: Phatcharapon)
+# แก้ไฟล์นี้แล้วต้องรัน: python tools/gen_config.py  เพื่ออัปเดต shared/config.h
+# เปลี่ยนค่าที่กระทบ Interface ต้องเพิ่ม contract_version และแจ้งทั้งทีม
+contract_version: 1
+bed_id: bed01
+
+network:
+  gateway_host: smartbed-gw.local
+  udp_port: 5005
+  max_packet_bytes: 512
+  ack_timeout_ms: 300
+  max_retry: 5
+  node_queue_size: 20
+  dedup_window: 50
+  offline_s: 30
+
+rates:
+  fsr_every_s: 1
+  temp_every_s: 5
+  audio_every_s: 5
+  hb_every_s: 10
+  env_every_s: 5
+  history_fsr_every_s: 10
+  live_write_min_interval_s: 1
+
+pressure:
+  fsr_on_threshold: 300
+  dwell_limit_min: 120
+  dwell_reset_s: 10
+  pressure_action: notify   # notify | raise  (ทีมตัดสินในประชุมแรก)
+
+audio:
+  choke_conf: 0.80
+  choke_count: 3
+  choke_window_s: 5
+
+temperature:
+  fever_c: 37.5
+  fever_hold_s: 60
+  mlx_offset_c: 0.0
+
+sensors:
+  sensor_fail_count: 3
+
+motor:
+  timeout_s: 5
+  pwm_duty: 0.7
+  ramp_s: 0.3
+
+notify:
+  repeat_critical_s: 120
+  repeat_critical_max: 5
+  dedup_window_s: 120
+
+demo:
+  time_scale: 1    # ตอนเดโมตั้งเป็น 60
+
+fsr_order: [shoulder_l, shoulder_r, hip_l, hip_r, heel_l, heel_r]
+
+pins:
+  node1:
+    fsr: [4, 5, 6, 7, 8, 9]       # ตามลำดับ fsr_order
+    pull_cord: 10                 # INPUT_PULLUP, กดลง GND
+  node2:
+    i2s_bclk: 12
+    i2s_ws: 13
+    i2s_sd: 14
+    mlx_sda: 8
+    mlx_scl: 9
+    mlx_addr: 0x5A
+  gateway:                        # เลข BCM
+    dht22: 4
+    i2c_sda: 2
+    i2c_scl: 3
+    ads1115_addr: 0x48
+    mq135_channel: 0
+    tb6612_pwma: 18
+    tb6612_ain1: 23
+    tb6612_ain2: 24
+    tb6612_stby: 25
+    limit_lower: 5                # NC + pull-up: HIGH = ถูกกดหรือสายหลุด
+    limit_upper: 6

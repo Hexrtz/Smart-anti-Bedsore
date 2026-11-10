@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "smart-bed/temp.json",
+  "title": "อุณหภูมิหน้าผากจาก MLX90614",
+  "type": "object",
+  "required": [
+    "v",
+    "node",
+    "seq",
+    "type",
+    "t",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^node[0-9]+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "type": {
+      "const": "temp"
+    },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "millis() ของ Node"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "body_c"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "body_c": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "null เมื่ออ่านเซนเซอร์ไม่ได้"
+        }
+      }
+    }
+  }
+}
