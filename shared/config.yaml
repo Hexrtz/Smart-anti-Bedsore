@@ -27,7 +27,7 @@ pressure:
   fsr_on_threshold: 300
   dwell_limit_min: 120
   dwell_reset_s: 10
-  pressure_action: notify   # notify | raise  (ทีมตัดสินในประชุมแรก)
+  pressure_action: raise   # notify | raise  (ทีมตัดสินในประชุมแรก)
 
 audio:
   choke_conf: 0.80
