@@ -44,8 +44,8 @@ sensors:
 
 motor:
   timeout_s: 5
-  supply_v: 9
-  pwm_duty: 0.68
+  supply_v: 6
+  pwm_duty: 1.0
   pwm_freq_hz: 20000
   ramp_s: 0.3
   reverse_pause_s: 0.2
