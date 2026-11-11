@@ -44,8 +44,11 @@ sensors:
 
 motor:
   timeout_s: 5
-  pwm_duty: 0.7
+  supply_v: 9
+  pwm_duty: 0.68
+  pwm_freq_hz: 20000
   ramp_s: 0.3
+  reverse_pause_s: 0.2
 
 notify:
   repeat_critical_s: 120
@@ -74,9 +77,9 @@ pins:
     i2c_scl: 3
     ads1115_addr: 0x48
     mq135_channel: 0
-    tb6612_pwma: 18
-    tb6612_ain1: 23
-    tb6612_ain2: 24
-    tb6612_stby: 25
+    motor_pwm: 18
+    motor_ina: 23
+    motor_inb: 24
+    motor_cs_channel: 1      # ADS1115 A1
     limit_lower: 5                # NC + pull-up: HIGH = ถูกกดหรือสายหลุด
     limit_upper: 6
