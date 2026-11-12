@@ -1,2 +1,4 @@
 pyyaml>=6
 jsonschema>=4.18
+firebase-admin>=6.5
+python-dotenv>=1.0
