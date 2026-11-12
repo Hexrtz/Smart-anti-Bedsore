@@ -6,3 +6,4 @@
 | 2026-11-08 | Phatcharapon | Claude + Autodesk Fusion MCP | โมเดล 3D โครงเตียงและกลไกบานพับ | |
 | 2026-11-09 | Phatcharapon | Claude (claude.ai) | ร่าง Integration Contract และเอกสารแบ่งงาน | ทีมรับรองเป็น v1 |
 | 2026-11-10 | Phatcharapon | Claude (claude.ai) | โครง repo, `config.yaml`, `gen_config.py`, JSON Schema, `check_schema.py` | |
+| 2026-11-12 | Natthasit | Claude (claude.ai) + Claude Code | เฟิร์มแวร์อัดเสียง `node2/src/record/`, UI `node2/recorder/record_gui.py` | Claude Code ย้าย UI เข้า repo, ปรับที่เซฟไฟล์, เขียน README |
