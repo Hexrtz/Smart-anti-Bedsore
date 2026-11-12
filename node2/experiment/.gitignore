@@ -1,0 +1,33 @@
+# Rules for node2/experiment only (paths are relative to this folder).
+
+# datasets: tens of GB, and data/raw/inmp441 holds real people's voices.
+# Share privately (Google Drive), never commit.
+data/
+
+# python environment and caches
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# keys (root .gitignore also has .env, kept here so this folder is safe on its own)
+.env
+
+# training runs and large files
+runs/
+*.log
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.webm
+*.zip
+*.tar.gz
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tflite
+*.keras
+*.h5

@@ -1,0 +1,25 @@
+[project]
+name = "notebooks"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "datacollective>=0.7.1",
+    "ipykernel>=7.4.0",
+    "kagglehub>=1.0.3",
+    "librosa>=1.0.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "pandas>=3.1.1",
+    "torch>=2.15.0",
+    "torchaudio>=2.11.1",
+    "torchcodec>=0.17.0",
+]
+
+[project.scripts]
+notebooks = "notebooks:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
