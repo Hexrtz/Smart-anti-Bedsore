@@ -16,6 +16,8 @@ DOWNLOAD ?=
 COUGH_MIN ?= 0.8
 CV_SHARE ?= 0.5
 SEED ?= 42
+# datasets kept out of train/val/test (field test only); HOLDOUT= puts them back
+HOLDOUT ?= inmp441
 # make_clips.py: training window, extra audio each side, max coughs per public file,
 # non-cough clips per cough clip, background share of non-cough
 CLIP_S ?= 1.0
@@ -23,20 +25,28 @@ MARGIN_S ?= 0.5
 MAX_PER_FILE ?= 3
 OTHER_RATIO ?= 1.0
 BG_SHARE ?= 0.5
+# train.py: config file, extra overrides (SET="train.epochs=5 model.dropout=0.1")
+CONFIG ?= configs/baseline_mlp.yaml
+SET ?=
+# quantize.py: run folder(s); empty = latest run of every config
+RUN ?=
 # dataset_info.py: which stage(s) to summarise: raw interim processed
 STAGE ?= interim processed
 
 .DEFAULT_GOAL := process
-.PHONY: help setup download check select interim process info all clean-interim clean-processed
+.PHONY: help setup download check select interim process train quantize export info all clean-interim clean-processed
 
 help:
 	@echo "make setup          uv sync (install packages)"
 	@echo "make download       fetch datasets into data/raw   (DOWNLOAD=\"esc50 common_voice_th\")"
 	@echo "make check          sample rate / channel report -> data/reports/audio_info.csv"
-	@echo "make select         balanced file list -> data/manifest.csv   (COUGH_MIN=$(COUGH_MIN) CV_SHARE=$(CV_SHARE) SEED=$(SEED))"
+	@echo "make select         balanced file list -> data/manifest.csv   (COUGH_MIN=$(COUGH_MIN) CV_SHARE=$(CV_SHARE) SEED=$(SEED) HOLDOUT=$(HOLDOUT))"
 	@echo "make interim        check + select, then convert manifest files to mono 16 kHz -> data/interim"
 	@echo "make process        interim, then cut 1 s clips -> data/processed + data/clips.csv"
 	@echo "                     (CLIP_S=$(CLIP_S) MARGIN_S=$(MARGIN_S) MAX_PER_FILE=$(MAX_PER_FILE) OTHER_RATIO=$(OTHER_RATIO) BG_SHARE=$(BG_SHARE))"
+	@echo "make train          train a model -> runs/<name>/<time>/   (CONFIG=$(CONFIG) SET=\"key=value ...\")"
+	@echo "make quantize       int8 post-training quantization, accuracy drop on val -> <run>/quant.json  (RUN=runs/cnn/...)"
+	@echo "make export         ONNX -> TFLite Micro int8 + C headers -> <run>/tflite/  (RUN=runs/cnn/...)"
 	@echo "make info           hours per dataset / label   (STAGE=\"$(STAGE)\")"
 	@echo "make all            download + process + info"
 	@echo "make clean-interim  delete data/interim (raw data is kept)"
@@ -53,7 +63,7 @@ check:
 	$(PY) src/check_audio.py --csv data/reports/audio_info.csv
 
 select: check
-	$(PY) src/select_data.py --cough-min $(COUGH_MIN) --cv-share $(CV_SHARE) --seed $(SEED)
+	$(PY) src/select_data.py --cough-min $(COUGH_MIN) --cv-share $(CV_SHARE) --seed $(SEED) --holdout "$(HOLDOUT)"
 
 # --prune removes interim files that are no longer in the manifest
 interim: select
@@ -62,6 +72,17 @@ interim: select
 process: interim
 	$(PY) src/make_clips.py --clip-s $(CLIP_S) --margin-s $(MARGIN_S) --max-per-file $(MAX_PER_FILE) \
 	  --other-ratio $(OTHER_RATIO) --bg-share $(BG_SHARE) --seed $(SEED)
+
+# not chained to process: training reuses data/processed as it is
+train:
+	$(PY) src/train.py --config $(CONFIG) $(foreach s,$(SET),--set $(s))
+
+quantize:
+	$(PY) src/quantize.py $(foreach r,$(RUN),--run $(r))
+
+# onnx2tf + TensorFlow live in the optional uv group "tflite"
+export:
+	uv run --group tflite python src/export_tflite.py $(foreach r,$(RUN),--run $(r))
 
 info:
 	$(PY) src/dataset_info.py $(STAGE)

@@ -72,7 +72,7 @@ def convert(src: Path) -> tuple[str, str]:
         sf.write(str(tmp), y, TARGET_SR, subtype="PCM_16", format="WAV")
         os.replace(tmp, dst)                                 # atomic: no half-written outputs
         return "done", ""
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return "fail", str(e)[:200]
 
 

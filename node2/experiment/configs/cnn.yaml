@@ -1,0 +1,41 @@
+# Step 2: small 2-D CNN (conv3x3-BN-ReLU-maxpool x3, global average pool).
+name: cnn
+seed: 42
+
+data:
+  clips_csv: data/clips.csv          # from `make process`
+  processed_dir: data/processed
+  classes: [cough, speech, background]
+
+features:                            # must match what the ESP32 computes
+  sample_rate: 16000
+  clip_s: 1.0                        # model input window
+  n_fft: 512
+  win_length: 400                    # 25 ms
+  hop_length: 160                    # 10 ms -> 97 frames per 1 s (center=False, n_fft 512)
+  n_mels: 40
+  f_min: 20
+  f_max: 8000
+  taper: hamming                     # hamming | none, on the whole 1 s window, train AND inference
+
+augment:                             # train split only
+  random_crop: true                  # shift the 1 s window inside the 2 s clip (cough stays inside)
+  gain_db: 6                         # random gain in [-6, +6] dB
+  noise_prob: 0.5                    # mix a random background window into half the batch
+  snr_db: [5, 20]
+
+model:
+  name: cnn
+  channels: [16, 32, 64]
+  dropout: 0.2
+
+train:
+  epochs: 40
+  batch_size: 256
+  lr: 0.003                          # peak of the one-cycle schedule
+  weight_decay: 0.0001
+  label_smoothing: 0.0
+  class_weights: balanced            # balanced | none
+  early_stop_patience: 8
+  select_metric: macro_f1            # val metric that picks the best epoch (or cough_f1, cough_recall)
+  device: cuda

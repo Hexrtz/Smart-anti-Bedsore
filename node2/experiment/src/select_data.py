@@ -20,12 +20,20 @@ Output data/manifest.csv, one row per file:
   seconds       file length (from data/reports/audio_info.csv)
   cough_detected  COUGHVID score, empty for other datasets
 
+--holdout (default inmp441) keeps whole datasets out of the manifest, so
+they never reach train / val / test. INMP441 is our real mic in the real
+room: holding it out makes it an independent field test (notebook
+test_inmp441.ipynb) that shows how well a model trained on internet data
+transfers to the device. Use --holdout "" to put it back into training
+(e.g. once several people have recorded, train on some, test on the rest).
+
 Balance is by file count. Files differ in length (COUGHVID ~10 s, Speech
 Commands 1 s), so the clip stage may need to balance again.
 
 Usage (run from node2/experiment):
     uv run python src/select_data.py
     uv run python src/select_data.py --cough-min 0.9 --cv-share 0.7 --seed 1
+    uv run python src/select_data.py --holdout ""            # use INMP441 in training too
 """
 
 from __future__ import annotations
@@ -141,6 +149,8 @@ def main() -> int:
                     help="share of the random speech fill taken from Common Voice; rest from Speech Commands")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out", type=Path, default=MANIFEST)
+    ap.add_argument("--holdout", default="inmp441",
+                    help="space/comma separated datasets kept out of the manifest (default inmp441, \"\" = none)")
     args = ap.parse_args()
 
     sc_words, sc_noise = speech_commands()
@@ -148,7 +158,13 @@ def main() -> int:
     esc = esc50()
     cv = common_voice()
 
+    holdout = {d for d in args.holdout.replace(",", " ").split() if d}
+    if holdout:
+        print(f"holdout (not in manifest): {sorted(holdout)}")
+        inmp, esc, cv, sc_words, sc_noise = (d[~d.dataset.isin(holdout)] for d in (inmp, esc, cv, sc_words, sc_noise))
+
     cough = pd.concat([coughvid(args.cough_min), esc[esc.label == "cough"], inmp[inmp.label == "cough"]])
+    cough = cough[~cough.dataset.isin(holdout)]
     fixed_other = pd.concat([inmp[inmp.label != "cough"], esc[esc.label != "cough"], sc_noise])
 
     # drop unreadable or too-short random-pool files, using the check_audio report
