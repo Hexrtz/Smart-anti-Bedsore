@@ -291,6 +291,7 @@ export เฉพาะตัว classifier ส่วน log-mel ทำบนเ�
 | `cough_<name>_int8.tflite` | โมเดล int8: input int8 [1, 40, 97, 1], output int8 logits [1, 3] |
 | `cough_model_data.h` | ไฟล์ `.tflite` เป็น C array (`alignas(16)`) ใส่ในเฟิร์มแวร์ได้เลย |
 | `cough_features.h` | ค่าคงที่ log-mel (ขนาด, STFT window, mel filterbank [257][40], mean/std), scale/zero point ของ input/output, ชื่อคลาส, ops ที่ต้อง register และขั้นตอนคำนวณใน comment |
+| `cough_test_vector.h` | golden test: หน้าต่างจาก val คลาสละ 1 อัน (ที่โมเดล int8 ทายถูก) มีเสียง int16, input int8 และ output int8 ที่คาดไว้ ใช้ตรวจ front end และโมเดลบนบอร์ด |
 | `export.json` | PyTorch float vs TFLite int8 บน val และ test, ขนาด, ops |
 
 **ผล (val, TFLite int8 reference kernels)**
@@ -301,6 +302,24 @@ export เฉพาะตัว classifier ส่วน log-mel ทำบนเ�
 | MLP `baseline_mlp/20261112-174723` | 1,015.5 KB | 0.9398 | 0.9398 | 0.00 pp | 0.01 pp | -0.13 pp | 99.8% | RESHAPE, FULLY_CONNECTED |
 
 ใช้ CNN บนบอร์ด (MLP 1 MB ใหญ่เกินไป) input ของ CNN: int8, scale 0.0206789, zero point -53
+
+ตรวจแล้วว่าขั้นตอน front end ใน comment ของ `cough_features.h` (คำนวณใหม่ด้วย numpy จากค่าใน header) ได้ input int8 ตรงกับ PyTorch ทุกค่า (0/3880 ต่างกัน) ทั้ง 3 test vector
+sketch ทดสอบบนบอร์ด: `node2/src/cough_tflm_test/` (Arduino IDE + library `tflm_esp32`, compile ผ่านกับ esp32 core 3.3.12, ESP32S3 Dev Module, Flash 16MB, OPI PSRAM)
+
+**ผลบนบอร์ดจริง (2026-11-14, ESP32-S3 N16R8, 240 MHz, `tflm_esp32` 2.0.0, core 3.3.12)**
+
+| รายการ | ผล |
+| --- | --- |
+| golden test vector | ผ่าน 3/3: output ของโมเดลตรงกับ PC ทุกค่า, input int8 จาก front end บนบอร์ดตรงกับ PyTorch 0/3880 ต่างกัน |
+| inference (CNN int8) | ~71 ms ต่อหน้าต่าง 1 s |
+| front end (Hamming + 97 FFT + mel + log + quantize) | ~238 ms ต่อหน้าต่าง |
+| รวม | ~310 ms ต่อหน้าต่าง (hop 500 ms) |
+| tensor arena | ใช้ 79,740 byte |
+| heap / PSRAM ว่างหลังทดสอบ | 225 KB / 8.06 MB |
+
+front end ช้ากว่า inference เพราะคูณ mel filterbank แบบเต็ม (257 x 40 ต่อ frame) จาก flash และใช้ FFT ที่เขียนเอง
+ทางเร่ง: คูณเฉพาะช่วงที่ filter ไม่เป็นศูนย์, ย้าย filterbank ไป RAM, ใช้ FFT ของ esp-dsp
+sketch สร้าง `MicroInterpreter` ใน buffer static แทน `new` บน heap (ครั้งแรกที่ใช้ `new` บอร์ด assert heap เสีย)
 
 **ข้อควรรู้สำหรับเฟิร์มแวร์**
 - ใช้ TFLite Micro ของ Espressif (`esp-tflite-micro` ซึ่งมี ESP-NN kernel ที่ปรับให้ S3) register เฉพาะ ops ใน `cough_features.h` ด้วย `MicroMutableOpResolver<4>`
