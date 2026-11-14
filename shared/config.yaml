@@ -81,5 +81,5 @@ pins:
     motor_ina: 23
     motor_inb: 24
     motor_cs_channel: 1      # ADS1115 A1
-    limit_lower: 5                # NC + pull-up: HIGH = ถูกกดหรือสายหลุด
-    limit_upper: 6
+    limit_lower: 6                # NC + pull-up: HIGH = ถูกกดหรือสายหลุด
+    limit_upper: 5
