@@ -1,0 +1,19 @@
+# ให้ Gateway เริ่มเองตอนบูต และเริ่มใหม่เองถ้าล้ม (เกณฑ์ Robustness ระดับ 3)
+# ติดตั้ง:
+#   sudo cp gateway/smartbed-gateway.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now smartbed-gateway
+# ดู log:  journalctl -u smartbed-gateway -f
+[Unit]
+Description=Smart Bed Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=rpi
+WorkingDirectory=/home/rpi/Smart-anti-Bedsore
+ExecStart=/home/rpi/Smart-anti-Bedsore/.venv/bin/python gateway/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

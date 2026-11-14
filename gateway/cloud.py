@@ -2,22 +2,27 @@
 
 path ที่ไฟล์นี้เขียน (ทั้งหมดอยู่ใต้ /beds/<bed_id>/):
   live/fsr/<point>      {raw, dwell_min}       ค่าล่าสุด 6 จุด
+  live/vitals           {body_c, room_c, humidity, aq}
+  live/audio            {label, conf}
+  live/backrest         {state, updated}
   live/nodes/<node>     {online, last_seen}
   live/updated          unix ms
   history/<date>/<id>   {ts, node, type, data} ข้อมูลดิบย้อนหลัง (เกณฑ์ M5)
   events/<id>           {type, severity, ts, detail, ack}
+อ่านจาก Firebase:
+  commands/backrest     {action, by, ts, status}  คำสั่งยก/ลดจาก Dashboard
 
 การเชื่อมต่อเป็น HTTPS (TLS) ผ่าน firebase-admin ใช้ Service Account ใน /etc/smartbed/sa.json (E5)
-โหมด --dry-run พิมพ์ออกจออย่างเดียว ไม่ต้องมี Firebase ใช้ทดสอบบนโน้ตบุ๊ก
-
-TODO หลัง Checkpoint: ส่งทุกการเขียนผ่าน store_forward.py (คิว SQLite) แทนการเรียก Firebase ตรง
+ทุกการเขียนผ่าน Outbox (store_forward.py) ก่อน เน็ตหลุดข้อมูลไม่หาย (E4)
+โหมด --dry-run พิมพ์ออกจออย่างเดียว ไม่ต้องมี Firebase
 """
-import asyncio
 import json
 import logging
+import os
 import time
 
-from settings import BED_ID, FIREBASE_DB_URL, FIREBASE_SA_PATH, FSR_ORDER, RATES
+from settings import BED_ID, FIREBASE_DB_URL, FIREBASE_SA_PATH, FSR_ORDER, RATES, ROOT
+from store_forward import Outbox
 
 log = logging.getLogger("cloud")
 
@@ -27,60 +32,84 @@ class Cloud:
         self.dry_run = dry_run
         self.base = f"beds/{BED_ID}"
         self._last_fsr_history_ms: dict[str, int] = {}
+        self.db = None
         if dry_run:
             log.info("DRY RUN: not connecting to Firebase")
-            return
-        import firebase_admin
-        from firebase_admin import credentials, db
-        if not FIREBASE_DB_URL:
-            raise SystemExit("FIREBASE_DB_URL is empty: set it in .env")
-        firebase_admin.initialize_app(credentials.Certificate(FIREBASE_SA_PATH),
-                                      {"databaseURL": FIREBASE_DB_URL})
-        self.db = db
-        log.info("connected to %s", FIREBASE_DB_URL)
+        else:
+            import firebase_admin
+            from firebase_admin import credentials, db
+            if not FIREBASE_DB_URL:
+                raise SystemExit("FIREBASE_DB_URL is empty: set it in .env")
+            firebase_admin.initialize_app(credentials.Certificate(FIREBASE_SA_PATH),
+                                          {"databaseURL": FIREBASE_DB_URL, "httpTimeout": 10})
+            self.db = db
+            log.info("connected to %s", FIREBASE_DB_URL)
+        db_path = os.environ.get("OUTBOX_PATH", str(ROOT / "outbox.db"))
+        self.outbox = Outbox(db_path, self._send)
 
-    # ---------- การเขียนพื้นฐาน (รันใน thread แยก ไม่ให้บล็อกการรับ UDP) ----------
-    async def _update(self, path: str, values: dict):
+    # ---------- ส่งจริง (เรียกจาก worker ของ Outbox ใน thread แยก) ----------
+    def _send(self, op: str, path: str, value: dict):
+        full = f"{self.base}/{path}"
         if self.dry_run:
-            log.info("UPDATE %s/%s %s", self.base, path, json.dumps(values, ensure_ascii=False))
+            log.info("%-6s %s %s", op.upper(), full, json.dumps(value, ensure_ascii=False))
             return
-        await asyncio.to_thread(self.db.reference(f"{self.base}/{path}").update, values)
+        ref = self.db.reference(full)
+        ref.update(value) if op == "update" else ref.push(value)
 
-    async def _push(self, path: str, value: dict):
-        if self.dry_run:
-            log.info("PUSH   %s/%s %s", self.base, path, json.dumps(value, ensure_ascii=False))
-            return
-        await asyncio.to_thread(self.db.reference(f"{self.base}/{path}").push, value)
+    def update(self, path: str, values: dict):
+        self.outbox.put("update", path, values)
 
-    async def _safe(self, coro):
-        """ตอนนี้ถ้าเน็ตหลุด แค่ log ไว้ (จะแทนด้วย Store-and-forward ใน G5)"""
-        try:
-            await coro
-        except Exception as e:  # noqa: BLE001
-            log.error("Firebase write failed: %s", e)
+    def push(self, path: str, value: dict):
+        self.outbox.put("push", path, value)
 
-    # ---------- handler ตามชนิดข้อความ ----------
-    async def on_fsr(self, msg: dict, recv_ms: int):
+    # ---------- handler ตามชนิดข้อมูล ----------
+    def on_fsr(self, msg: dict, recv_ms: int):
         raw, dwell = msg["data"]["raw"], msg["data"]["dwell_s"]
-        live = {f"fsr/{p}": {"raw": raw[i], "dwell_min": round(dwell[i] / 60, 1)}
-                for i, p in enumerate(FSR_ORDER)}
-        live["updated"] = recv_ms
-        await self._safe(self._update("live", live))
-
-        # history ของ fsr เก็บทุก history_fsr_every_s วินาที ต่อ Node (ข้อความมาทุก 1 วินาที)
+        for i, p in enumerate(FSR_ORDER):
+            self.update(f"live/fsr/{p}", {"raw": raw[i], "dwell_min": round(dwell[i] / 60, 1)})
+        self.update("live", {"updated": recv_ms})
         last = self._last_fsr_history_ms.get(msg["node"], 0)
         if recv_ms - last >= RATES["history_fsr_every_s"] * 1000:
             self._last_fsr_history_ms[msg["node"]] = recv_ms
-            await self.history(msg, recv_ms)
+            self.history(msg["node"], "fsr", msg["data"], recv_ms)
 
-    async def history(self, msg: dict, recv_ms: int):
+    def history(self, node: str, type_: str, data: dict, recv_ms: int):
         day = time.strftime("%Y-%m-%d", time.localtime(recv_ms / 1000))
-        await self._safe(self._push(f"history/{day}",
-                                    {"ts": recv_ms, "node": msg["node"], "type": msg["type"], "data": msg["data"]}))
+        self.push(f"history/{day}", {"ts": recv_ms, "node": node, "type": type_, "data": data})
 
-    async def node_status(self, node: str, online: bool, last_seen_ms: int):
-        await self._safe(self._update(f"live/nodes/{node}", {"online": online, "last_seen": last_seen_ms}))
+    def node_status(self, node: str, online: bool, last_seen_ms: int):
+        self.update(f"live/nodes/{node}", {"online": online, "last_seen": last_seen_ms})
 
-    async def event(self, type_: str, severity: str, detail: dict):
-        await self._safe(self._push("events", {"type": type_, "severity": severity,
-                                               "ts": int(time.time() * 1000), "detail": detail}))
+    def vitals(self, values: dict):
+        self.update("live/vitals", values)
+
+    def audio(self, label: str, conf: float):
+        self.update("live/audio", {"label": label, "conf": conf})
+
+    def backrest(self, state: str):
+        self.update("live/backrest", {"state": state, "updated": int(time.time() * 1000)})
+
+    def event(self, type_: str, severity: str, detail: dict):
+        log.warning("EVENT %s (%s) %s", type_, severity, detail)
+        self.push("events", {"type": type_, "severity": severity,
+                             "ts": int(time.time() * 1000), "detail": detail})
+
+    # ---------- ฟังคำสั่งจาก Dashboard ----------
+    def listen_commands(self, callback):
+        """callback(cmd: dict) ถูกเรียกใน thread ของ firebase-admin ต้องส่งต่อเข้า event loop เอง"""
+        if self.dry_run:
+            return None
+
+        def on_change(event):
+            cmd = self.db.reference(f"{self.base}/commands/backrest").get()
+            if isinstance(cmd, dict) and cmd.get("status") == "pending":
+                callback(cmd)
+        return self.db.reference(f"{self.base}/commands/backrest").listen(on_change)
+
+    def command_done(self, status: str, reason: str = ""):
+        """ตอบผลคำสั่ง ตรงนี้เขียนตรง ไม่ผ่านคิว เพราะเป็นการตอบสดของคำสั่งที่เพิ่งได้รับ"""
+        if self.dry_run:
+            log.info("command -> %s %s", status, reason)
+            return
+        self.db.reference(f"{self.base}/commands/backrest").update(
+            {"status": status, "reason": reason, "done_ts": int(time.time() * 1000)})
