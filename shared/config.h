@@ -39,7 +39,7 @@
 #define CFG_NOTIFY_REPEAT_CRITICAL_S 120
 #define CFG_NOTIFY_REPEAT_CRITICAL_MAX 5
 #define CFG_NOTIFY_DEDUP_WINDOW_S 120
-#define CFG_DEMO_TIME_SCALE 1
+#define CFG_DEMO_TIME_SCALE 60
 #define CFG_FSR_ORDER_COUNT 6
 #define CFG_FSR_ORDER {"shoulder_l", "shoulder_r", "hip_l", "hip_r", "heel_l", "heel_r"}
 #define CFG_PINS_NODE1_FSR_COUNT 6

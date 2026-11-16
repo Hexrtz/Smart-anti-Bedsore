@@ -56,7 +56,7 @@ notify:
   dedup_window_s: 120
 
 demo:
-  time_scale: 1    # ตอนเดโมตั้งเป็น 60
+  time_scale: 60   # เดโม: 1 วินาทีจริง = 1 นาที (pressure 120 นาที → 2 นาที) ใช้งานจริงตั้งกลับเป็น 1
 
 fsr_order: [shoulder_l, shoulder_r, hip_l, hip_r, heel_l, heel_r]
 
