@@ -22,7 +22,9 @@ from cloud import Cloud
 from env_sensors import EnvSensors
 from motor import Motor
 from rules import Rules
-from settings import RATES
+from settings import CONFIG, RATES
+
+KNOWN_NODES = [k for k in CONFIG["pins"] if k.startswith("node")]   # node1, node2 จาก config.yaml
 
 
 async def run(args):
@@ -57,13 +59,24 @@ async def run(args):
                 rules.on_env(values)
             await asyncio.sleep(RATES["env_every_s"])
 
+    # ล้างสถานะ online ที่ค้างจากรอบก่อน: Gateway เพิ่งเริ่ม ยังไม่ได้ยินใครเลย
+    # Node ไหนส่งข้อความมาจะถูกตั้งเป็น online อีกครั้งใน on_online (outbox ส่งตามลำดับ ค่า false ไปก่อนเสมอ)
+    for node in KNOWN_NODES:
+        cloud.update(f"live/nodes/{node}", {"online": False})
+
     # คำสั่งจาก Dashboard มาจาก thread ของ firebase-admin ต้องส่งเข้า event loop
     listener = cloud.listen_commands(
         lambda cmd: asyncio.run_coroutine_threadsafe(rules.on_command(cmd), loop))
 
+    async def home():
+        await rules.backrest("down", "startup")
+        # เขียนสถานะจริงทับค่าที่ค้างใน Firebase จากรอบก่อน (เช่น fault)
+        # เพราะ motor แจ้งเฉพาะตอนสถานะเปลี่ยน ถ้าราบอยู่แล้วจะไม่มีการเขียน
+        cloud.backrest(motor.state)
+
     if not args.no_home:
         logging.info("homing: lowering backrest to flat")
-        asyncio.ensure_future(rules.backrest("down", "startup"))
+        asyncio.ensure_future(home())
 
     transport, proto = await receiver.start(on_message, on_offline, on_online)
     try:

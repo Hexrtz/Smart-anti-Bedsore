@@ -44,6 +44,9 @@ class Rules:
     async def backrest(self, action: str, why: str) -> tuple[bool, str]:
         log.info("backrest %s (%s)", action, why)
         ok, reason = await asyncio.to_thread(self.motor.go, action)
+        if not ok:
+            # เช่น "fault" = ค้างสถานะ fault จากครั้งก่อน ต้อง reset (Dashboard: action reset หรือ restart Gateway)
+            log.warning("backrest %s refused: %s", action, reason)
         if reason == "motor_fault":
             self.event("motor_fault", "critical", {"action": action, "cause": why}, dedup=False)
         return ok, reason

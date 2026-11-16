@@ -16,6 +16,8 @@ log = logging.getLogger("env")
 PINS = CONFIG["pins"]["gateway"]
 FAIL_LIMIT = CONFIG["sensors"]["sensor_fail_count"]
 DIVIDER = 1.5
+READ_TRIES = 3        # DHT22: อ่านกี่ครั้งต่อรอบก่อนนับว่ารอบนี้พลาด
+RETRY_GAP_S = 2.1     # DHT22 อ่านถี่กว่า 2 วินาทีไม่ได้
 
 
 class DHT22:
@@ -27,17 +29,30 @@ class DHT22:
         if not self.dir:
             log.warning("DHT22 driver not found (check dtoverlay)")
 
+    def _read_once(self):
+        """อ่าน sysfs หนึ่งครั้ง คืน (t, h) หรือ None ถ้าพลาด"""
+        try:
+            t = int(open(f"{self.dir}/in_temp_input").read()) / 1000
+            h = int(open(f"{self.dir}/in_humidityrelative_input").read()) / 1000
+        except OSError:
+            return None
+        return (round(t, 1), round(h, 1)) if -20 < t < 80 and 0 <= h <= 100 else None
+
     def read(self):
-        """คืน (temp_c, humidity) หรือ (None, None) ถ้าอ่านพลาดติดกันเกินกำหนด"""
+        """คืน (temp_c, humidity) หรือ (None, None) ถ้าอ่านพลาดติดกันเกินกำหนด
+
+        ไดรเวอร์ dht11 บน Pi อ่านติดแค่ราว 2-3 จาก 5 ครั้ง (bench test 13-14 พ.ย.)
+        จึงลองซ้ำในรอบเดียวกันก่อน (DHT22 ต้องเว้นอย่างน้อย 2 วินาทีต่อการอ่าน) ค่อยนับว่ารอบนี้พลาด
+        เมธอดนี้รันใน thread แยก (asyncio.to_thread) การ sleep จึงไม่บล็อกการรับ UDP
+        """
         if self.dir:
-            try:
-                t = int(open(f"{self.dir}/in_temp_input").read()) / 1000
-                h = int(open(f"{self.dir}/in_humidityrelative_input").read()) / 1000
-                if -20 < t < 80 and 0 <= h <= 100:
-                    self.last, self.fails = (round(t, 1), round(h, 1)), 0
+            for attempt in range(READ_TRIES):
+                if attempt:
+                    time.sleep(RETRY_GAP_S)
+                value = self._read_once()
+                if value:
+                    self.last, self.fails = value, 0
                     return self.last
-            except OSError:
-                pass
         self.fails += 1
         return self.last if self.fails < FAIL_LIMIT else (None, None)
 
