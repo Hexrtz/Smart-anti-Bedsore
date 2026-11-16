@@ -89,5 +89,7 @@ class EnvSensors:
             return {}
         t, h = self.dht.read()
         v, idx = self.mq.read()
-        faults = [n for n, bad in (("dht22", t is None), ("mq135", v is None)) if bad]
+        # DHT22 อ่านพลาดเป็นปกติ นับเป็น fault เมื่อพลาดติดกันครบ sensor_fail_count ครั้งเท่านั้น
+        faults = [n for n, bad in (("dht22", self.dht.fails >= FAIL_LIMIT),
+                                   ("mq135", v is None)) if bad]
         return {"room_c": t, "humidity": h, "aq_v": v, "aq": idx, "faults": faults}

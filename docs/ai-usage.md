@@ -6,3 +6,5 @@
 | 2026-11-08 | Phatcharapon | Claude + Autodesk Fusion MCP | โมเดล 3D โครงเตียงและกลไกบานพับ | |
 | 2026-11-09 | Phatcharapon | Claude (claude.ai) | ร่าง Integration Contract และเอกสารแบ่งงาน | ทีมรับรองเป็น v1 |
 | 2026-11-10 | Phatcharapon | Claude (claude.ai) | โครง repo, `config.yaml`, `gen_config.py`, JSON Schema, `check_schema.py` | |
+| 2026-11-13 | Phatcharapon | Claude (claude.ai) | Gateway v1-v2 (`gateway/`), `tools/node_sim.py`, สคริปต์ทดสอบฮาร์ดแวร์บน Pi | ทดสอบบน Pi จริงแล้ว |
+| 2026-11-16 | Phatcharapon | Claude (claude.ai) | โค้ด Node1 v1 (`node1/`) FSR + สายดึง (ISR deferred) + ACK/Retry | ยังต้องทดสอบบนบอร์ดจริง |
