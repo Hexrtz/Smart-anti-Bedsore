@@ -46,6 +46,7 @@ static uint32_t stat_sent = 0, stat_acked = 0, stat_dropped = 0;
 static WiFiUDP udp;
 static IPAddress gateway;
 static bool gateway_ok = false;
+static bool udp_ready = false;   // เปิด socket แล้วหรือยัง (udp.begin หลังต่อ Wi-Fi ได้)
 
 // คิวถูกใช้จาก loop() และ cordTask พร้อมกัน ต้องล็อกทุกครั้งที่แตะคิว
 static SemaphoreHandle_t queue_lock;
@@ -98,7 +99,8 @@ static void enqueue(const char *type, const String &data, bool urgent) {
 
 static void serviceQueue() {
   Lock lock;
-  if (queue_.empty() || !gateway_ok || WiFi.status() != WL_CONNECTED) return;
+  // ต้องส่งจาก socket ที่ bind พอร์ตไว้แล้ว เพราะ Gateway ตอบ ACK กลับมาที่พอร์ตต้นทาง
+  if (queue_.empty() || !gateway_ok || !udp_ready || WiFi.status() != WL_CONNECTED) return;
   Msg &m = queue_.front();
   uint32_t now = millis();
   if (m.attempts > 0 && now - m.last_ms < CFG_NETWORK_ACK_TIMEOUT_MS) return;   // ยังรอ ACK อยู่
@@ -119,6 +121,8 @@ static void serviceQueue() {
 
 // ACK จาก Gateway: {"v":1,"type":"ack","node":"node1","seq":123}
 static void readAcks() {
+  // ถ้ายังไม่ได้ udp.begin() socket ยังไม่เปิด parsePacket จะพ่น error 9 รัวๆ
+  if (!udp_ready || WiFi.status() != WL_CONNECTED) return;
   int n;
   while ((n = udp.parsePacket()) > 0) {
     char buf[128];
@@ -163,8 +167,12 @@ static void keepWifi() {
   if (connected && !was_connected) {
     Serial.printf("wifi connected, ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
     MDNS.begin(NODE_ID);
-    udp.begin(CFG_NETWORK_UDP_PORT);   // พอร์ตฝั่ง Node สำหรับรับ ACK
+    udp_ready = udp.begin(CFG_NETWORK_UDP_PORT);   // พอร์ตฝั่ง Node สำหรับรับ ACK
     resolveGateway();
+  }
+  if (!connected && was_connected) {   // หลุด: ปิด socket เดิม ต่อใหม่ได้ค่อย begin ใหม่
+    udp.stop();
+    udp_ready = false;
   }
   if (!connected && millis() - last_try > 5000) {   // หลุด: ลองต่อใหม่ทุก 5 วินาที ข้อความรอในคิว
     last_try = millis();
