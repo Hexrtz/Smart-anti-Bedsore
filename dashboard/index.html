@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Bed Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== หน้า Login ===================== -->
+<section id="login-view" class="login" hidden>
+  <form id="login-form" class="login-card" autocomplete="on">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Smart Anti-Bedsore Bed</h1>
+        <p class="muted">เข้าสู่ระบบเพื่อดูข้อมูลผู้ป่วย</p>
+      </div>
+    </div>
+    <label for="email">อีเมล</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">รหัสผ่าน</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <p id="login-error" class="login-error" role="alert"></p>
+    <button id="login-btn" type="submit">เข้าสู่ระบบ</button>
+  </form>
+</section>
+
+<!-- ===================== Dashboard (เห็นหลังล็อกอินเท่านั้น) ===================== -->
+<section id="dash-view" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Smart Anti-Bedsore Bed</h1>
+        <p class="muted" id="bed-label"></p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="link-pill" class="pill pill-bad">รอข้อมูล</span>
+      <span id="user-email" class="muted"></span>
+      <button id="logout-btn" class="btn-ghost" type="button">ออกจากระบบ</button>
+    </div>
+  </header>
+
+  <div id="stale-banner" class="banner" role="alert" hidden></div>
+
+  <main class="grid">
+    <!-- แผนที่แรงกด -->
+    <article class="card card-map">
+      <div class="card-head">
+        <h2>แผนที่แรงกดทับ</h2>
+        <span class="muted small">มองจากเพดาน · หัวเตียงอยู่ด้านบน</span>
+      </div>
+      <svg id="bed-map" viewBox="0 0 320 590" role="img" aria-label="แผนที่แรงกดทับ 6 จุดบนเตียง">
+        <rect class="bed-frame" x="30" y="10" width="260" height="560" rx="18"/>
+        <rect class="bed-backrest" x="40" y="20" width="240" height="180" rx="12"/>
+        <rect class="bed-mattress" x="40" y="204" width="240" height="356" rx="12"/>
+        <line class="bed-hinge" x1="40" y1="202" x2="280" y2="202"/>
+        <!-- เงาผู้ป่วย -->
+        <g class="body-shadow">
+          <circle cx="160" cy="58" r="28"/>
+          <rect x="80" y="92" width="160" height="256" rx="52"/>
+          <rect x="92" y="322" width="62" height="208" rx="26"/>
+          <rect x="166" y="322" width="62" height="208" rx="26"/>
+        </g>
+        <text class="bed-note" x="276" y="216" text-anchor="end">--- บานพับพนักพิง</text>
+        <text class="side-note" x="48" y="586">ขวาของผู้ป่วย</text>
+        <text class="side-note" x="272" y="586" text-anchor="end">ซ้ายของผู้ป่วย</text>
+        <g id="fsr-points"></g>
+      </svg>
+      <div class="legend">
+        <div class="legend-scale">
+          <span class="legend-bar" aria-hidden="true"></span>
+          <div class="legend-ticks"><span>0</span><span id="legend-mid"></span><span id="legend-max"></span></div>
+        </div>
+        <div class="legend-item"><span class="legend-dot legend-off" aria-hidden="true"></span><span id="legend-off-text"></span></div>
+      </div>
+    </article>
+
+    <!-- พนักพิง -->
+    <article class="card card-backrest">
+      <div class="card-head">
+        <h2>พนักพิง</h2>
+        <span id="backrest-updated" class="muted small"></span>
+      </div>
+      <div class="backrest-body">
+        <svg id="backrest-svg" viewBox="0 0 300 150" role="img" aria-label="ภาพด้านข้างของพนักพิง">
+          <line class="floor" x1="10" y1="140" x2="290" y2="140"/>
+          <rect class="leg" x="52" y="112" width="8" height="28"/>
+          <rect class="leg" x="240" y="112" width="8" height="28"/>
+          <rect class="base" x="122" y="98" width="148" height="14" rx="4"/>
+          <g id="backrest-arm">
+            <rect class="arm" x="40" y="98" width="82" height="14" rx="4"/>
+            <circle class="pillow" cx="56" cy="90" r="9"/>
+          </g>
+          <circle class="hinge" cx="122" cy="105" r="6"/>
+          <g id="backrest-fault-icon" class="fault-icon" hidden>
+            <path d="M226 20 L250 62 L202 62 Z"/>
+            <text x="226" y="56" text-anchor="middle">!</text>
+          </g>
+        </svg>
+        <div id="backrest-state" class="state-chip">—</div>
+      </div>
+    </article>
+
+    <!-- Vitals -->
+    <article class="card card-vitals">
+      <div class="card-head"><h2>สัญญาณชีพและสภาพห้อง</h2></div>
+      <div class="vitals">
+        <div class="vital" id="v-body"><span class="v-label">อุณหภูมิร่างกาย</span><span class="v-value">—</span><span class="v-sub"></span></div>
+        <div class="vital" id="v-room"><span class="v-label">อุณหภูมิห้อง</span><span class="v-value">—</span><span class="v-sub"></span></div>
+        <div class="vital" id="v-hum"><span class="v-label">ความชื้น</span><span class="v-value">—</span><span class="v-sub"></span></div>
+        <div class="vital" id="v-aq"><span class="v-label">คุณภาพอากาศ (MQ-135)</span><span class="v-value">—</span><span class="v-sub"></span></div>
+      </div>
+    </article>
+
+    <!-- Nodes -->
+    <article class="card card-nodes">
+      <div class="card-head"><h2>สถานะ Node</h2><span id="nodes-count" class="muted small"></span></div>
+      <ul id="node-list" class="node-list"></ul>
+    </article>
+
+    <!-- Events -->
+    <article class="card card-events">
+      <div class="card-head"><h2>เหตุการณ์ล่าสุด</h2><span id="events-count" class="muted small"></span></div>
+      <ol id="event-list" class="event-list"></ol>
+    </article>
+  </main>
+</section>
+
+<p id="boot-error" class="boot-error" hidden></p>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
