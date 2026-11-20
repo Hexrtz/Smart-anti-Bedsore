@@ -1,9 +1,14 @@
-// Node 2 live cough / choke detector: INMP441 -> log-mel -> int8 CNN (TFLite Micro) -> Serial.
+// Node 2 live cough / choke detector + forehead temperature, sent to the Gateway over UDP (net.h)
+// and printed to Serial.
+//   INMP441 -> log-mel -> int8 CNN (TFLite Micro)
+//   MLX90614 -> SMBus driver with PEC check (mlx90614.h)
 //
 // Serial 115200, one line per event (nothing is printed for speech / background windows):
 //   [  12.5 s] COUGH #3  p=0.97
 //   [  13.0 s] CHOKE  3 coughs in 5 s
 //   [  20.0 s] alive  no cough for 5 s  (last window: background 0.91, 312 ms/window, skipped 0)
+//   [  25.0 s] TEMP   body 36.4 C  ambient 29.1 C
+//   [  30.0 s] TEMP   read failed: NACK (not connected?)  (3 in a row -> FAULT mlx90614)
 //
 // FreeRTOS tasks (no polling in loop()):
 //   audio_task   (core 0) reads I2S blocks, int32 >> 16 -> int16 (same as record.ino),
@@ -11,6 +16,14 @@
 //   infer_task   (core 1) waits for the notification, copies the last 1 s, front end + model,
 //                sends the result to a queue
 //   report_task  (core 1) turns window results into cough events and choke alerts
+//   temp_task    (core 1) reads the MLX90614 every TEMP_EVERY_MS (vTaskDelayUntil, not polling)
+//   comm_task    (core 0, lowest priority) Wi-Fi, UDP send queue with ACK/retry, heartbeat (net.h)
+//
+// Messages to the Gateway (shared/schema/):
+//   audio {label, conf}  at once on a cough event or a choke, plus the latest window every 5 s
+//                        ("choke" is sent once per burst so the Gateway raises the backrest once)
+//   temp  {body_c}       every 5 s, null when the sensor can't be read
+//   hb                   every 10 s, faults ["mlx90614"] while the sensor is in fault
 //
 // Cough event: consecutive windows with p_cough >= COUGH_THRESHOLD count as ONE cough
 // (windows overlap by 0.5 s, so one cough usually appears in two windows).
@@ -18,6 +31,7 @@
 //
 // Arduino IDE: "ESP32S3 Dev Module", Flash 16MB, PSRAM "OPI PSRAM", USB CDC On Boot as you use it.
 // Library: tflm_esp32. Wiring as record.ino: SCK 12, WS 13, SD 14, L/R -> GND.
+// MLX90614 (GY-906): VIN 3V3, GND, SDA 8, SCL 9, address 0x5A (shared/config.h CFG_PINS_NODE2_MLX_*).
 
 #include <Arduino.h>
 #include <new>
@@ -28,6 +42,8 @@
 #include "cough_model_data.h"
 #include "cough_features.h"
 #include "cough_frontend.h"
+#include "mlx90614.h"
+#include "net.h"
 
 // ---------------- settings ----------------
 #define I2S_SCK 12
@@ -44,6 +60,15 @@
 #define CHOKE_WINDOW_MS 5000         // ... within this time = choke
 #define ALIVE_MS 5000                // print "alive" after this long without a cough
 #define PRINT_EVERY_WINDOW 0         // 1 = print every window (for tuning the threshold)
+#define AUDIO_EVERY_MS 5000          // CFG_RATES_AUDIO_EVERY_S * 1000: periodic audio message
+
+// MLX90614, values copied from shared/config.h (Arduino IDE can't include files outside the sketch)
+#define MLX_SDA 8                    // CFG_PINS_NODE2_MLX_SDA
+#define MLX_SCL 9                    // CFG_PINS_NODE2_MLX_SCL
+#define MLX_ADDR 0x5A                // CFG_PINS_NODE2_MLX_ADDR (90)
+#define MLX_OFFSET_C 0.0f            // CFG_TEMPERATURE_MLX_OFFSET_C (calibrate vs a thermometer)
+#define MLX_FAIL_COUNT 3             // CFG_SENSORS_SENSOR_FAIL_COUNT: failures in a row = fault
+#define TEMP_EVERY_MS 5000           // CFG_RATES_TEMP_EVERY_S * 1000 (set 1000 while testing)
 
 constexpr size_t ARENA_SIZE = 96 * 1024;  // 79,740 bytes measured
 constexpr int N_INPUT = COUGH_N_MELS * COUGH_FRAMES;
@@ -159,8 +184,9 @@ static void infer_task(void *) {
 static void report_task(void *) {
   const int COUGH = 0;  // cough_classes[0] == "cough"
   uint32_t event_ms[CHOKE_COUGHS];  // times of the last CHOKE_COUGHS cough events
+  float event_p[CHOKE_COUGHS];      // highest p_cough seen in each of those events
   int n_recent = 0;
-  uint32_t n_events = 0, last_cough_ms = 0, last_alive_ms = 0;
+  uint32_t n_events = 0, last_cough_ms = 0, last_alive_ms = 0, last_audio_ms = 0;
   bool in_event = false, choke_active = false;
   WindowResult r;
   for (;;) {
@@ -177,18 +203,37 @@ static void report_task(void *) {
       n_events++;
       if (n_recent == CHOKE_COUGHS) {
         memmove(event_ms, event_ms + 1, (CHOKE_COUGHS - 1) * sizeof(uint32_t));
+        memmove(event_p, event_p + 1, (CHOKE_COUGHS - 1) * sizeof(float));
         n_recent--;
       }
-      event_ms[n_recent++] = r.end_ms;
+      event_ms[n_recent] = r.end_ms;
+      event_p[n_recent++] = r.p[COUGH];
       Serial.printf("[%7.1f s] COUGH #%u  p=%.2f\n", t, n_events, r.p[COUGH]);
 
       bool burst = n_recent == CHOKE_COUGHS && r.end_ms - event_ms[0] <= CHOKE_WINDOW_MS;
       if (burst && !choke_active) {
-        Serial.printf("[%7.1f s] CHOKE  %d coughs in %.0f s\n", t, CHOKE_COUGHS, CHOKE_WINDOW_MS / 1000.0f);
+        float conf = 0.0f;  // choke confidence = mean of the cough events' peak p
+        for (int i = 0; i < CHOKE_COUGHS; i++) conf += event_p[i];
+        conf /= CHOKE_COUGHS;
+        Serial.printf("[%7.1f s] CHOKE  %d coughs in %.0f s  conf=%.2f\n", t, CHOKE_COUGHS,
+                      CHOKE_WINDOW_MS / 1000.0f, conf);
+        net_send("audio", String("{\"label\":\"choke\",\"conf\":") + String(conf, 2) + "}", true);
         choke_active = true;
+      } else {
+        net_send("audio", String("{\"label\":\"cough\",\"conf\":") + String(r.p[COUGH], 2) + "}");
       }
+      last_audio_ms = r.end_ms;
+    } else if (cough && in_event && r.p[COUGH] > event_p[n_recent - 1]) {
+      event_p[n_recent - 1] = r.p[COUGH];  // same cough continues: keep its peak
     }
     in_event = cough;
+
+    // periodic update with the latest window (never "choke": that would raise the backrest again)
+    if (r.end_ms - last_audio_ms >= AUDIO_EVERY_MS) {
+      net_send("audio", String("{\"label\":\"") + cough_classes[r.pred] + "\",\"conf\":" +
+                            String(r.p[r.pred], 2) + "}");
+      last_audio_ms = r.end_ms;
+    }
     if (cough) last_cough_ms = r.end_ms;
 
     // choke ends once the burst is over (no CHOKE_COUGHS coughs within the window any more)
@@ -199,6 +244,37 @@ static void report_task(void *) {
       Serial.printf("[%7.1f s] alive  no cough for %.0f s  (last window: %s %.2f, %u ms/window, skipped %u)\n",
                     t, ALIVE_MS / 1000.0f, cough_classes[r.pred], r.p[r.pred], r.compute_ms, r.skipped);
       last_alive_ms = r.end_ms;
+    }
+  }
+}
+
+static void temp_task(void *) {
+  TickType_t wake = xTaskGetTickCount();
+  int fails = 0;
+  bool fault = false;
+  for (;;) {
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(TEMP_EVERY_MS));  // fixed period, task sleeps in between
+    float t = millis() / 1000.0f;
+    float body, ambient;
+    MlxStatus s = mlx_read_c(MLX_REG_TOBJ1, &body);
+    if (s == MLX_OK) s = mlx_read_c(MLX_REG_TA, &ambient);
+
+    if (s == MLX_OK) {
+      if (fault) Serial.printf("[%7.1f s] TEMP   sensor recovered\n", t);
+      fails = 0;
+      fault = false;
+      net_mlx_fault = false;
+      Serial.printf("[%7.1f s] TEMP   body %.1f C  ambient %.1f C\n", t, body + MLX_OFFSET_C, ambient);
+      net_send("temp", String("{\"body_c\":") + String(body + MLX_OFFSET_C, 1) + "}");
+    } else {
+      fails++;
+      Serial.printf("[%7.1f s] TEMP   read failed: %s  (%d in a row)\n", t, mlx_status_str(s), fails);
+      if (fails >= MLX_FAIL_COUNT && !fault) {
+        fault = true;
+        net_mlx_fault = true;  // hb.faults gets "mlx90614" until a read succeeds again
+        Serial.printf("[%7.1f s] FAULT  mlx90614\n", t);
+      }
+      net_send("temp", "{\"body_c\":null}");  // report "no reading", never a garbage value
     }
   }
 }
@@ -232,11 +308,22 @@ void setup() {
 
   if (!mic_init()) halt("I2S microphone init failed: check SCK 12 / WS 13 / SD 14");
 
+  mlx_init(MLX_SDA, MLX_SCL, MLX_ADDR);
+  float c;
+  MlxStatus s = mlx_read_c(MLX_REG_TA, &c);
+  if (s == MLX_OK) Serial.printf("MLX90614 found at 0x%02X, ambient %.1f C\n", MLX_ADDR, c);
+  else Serial.printf("MLX90614 not ready: %s (check SDA %d / SCL %d / 3V3) - continuing\n",
+                     mlx_status_str(s), MLX_SDA, MLX_SCL);
+
+  net_begin();  // Wi-Fi from secrets.h; the queue is ready before any task sends
+
   ring_mutex = xSemaphoreCreateMutex();
   result_queue = xQueueCreate(8, sizeof(WindowResult));
   xTaskCreatePinnedToCore(infer_task, "infer", 16384, nullptr, 3, &infer_handle, 1);
   xTaskCreatePinnedToCore(report_task, "report", 4096, nullptr, 2, nullptr, 1);
   xTaskCreatePinnedToCore(audio_task, "audio", 4096, nullptr, 5, nullptr, 0);
+  xTaskCreatePinnedToCore(temp_task, "temp", 4096, nullptr, 1, nullptr, 1);
+  xTaskCreatePinnedToCore(comm_task, "comm", 6144, nullptr, 1, nullptr, 0);
   Serial.printf("listening: window 1 s, hop 0.5 s, cough >= %.2f, choke = %d coughs in %d s\n",
                 COUGH_THRESHOLD, CHOKE_COUGHS, CHOKE_WINDOW_MS / 1000);
 }
